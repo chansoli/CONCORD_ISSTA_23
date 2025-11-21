@@ -18,6 +18,8 @@ cd ../
 
 # install pip packages
 cd CONCORD_ISSTA23;
+conda install -y numpy=1.22.4 scipy scikit-learn
+conda install -y scikit-learn
 pip install -r requirements.txt;
 export PYTHONPATH=$(pwd);
 ```
