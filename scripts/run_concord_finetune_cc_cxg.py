@@ -549,8 +549,13 @@ def main():
     args.device = device
     logger.info("device: %s, n_gpu: %s", device, args.n_gpu)
 
-    args.per_gpu_train_batch_size=args.train_batch_size//args.n_gpu
-    args.per_gpu_eval_batch_size=args.eval_batch_size//args.n_gpu
+    if args.n_gpu == 0:
+        logger.warning("No CUDA devices detected; running on CPU only.")
+        args.per_gpu_train_batch_size = args.train_batch_size
+        args.per_gpu_eval_batch_size = args.eval_batch_size
+    else:
+        args.per_gpu_train_batch_size = args.train_batch_size // args.n_gpu
+        args.per_gpu_eval_batch_size = args.eval_batch_size // args.n_gpu
     # Setup logging
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt='%m/%d/%Y %H:%M:%S',

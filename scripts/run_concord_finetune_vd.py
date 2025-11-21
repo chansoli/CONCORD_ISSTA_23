@@ -259,7 +259,16 @@ def main():
             "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
             "and load it from here, using --tokenizer_name"
         )
-    logger.info("DEBUG: Tokenizer: %s, dict size = %d, mask token = %s,  cls token = %s, pad token = %s", tokenizer.__class__.__name__, len(tokenizer.vocab), tokenizer.mask_token, tokenizer.cls_token, tokenizer.pad_token)
+    # Roberta tokenizers expose vocab via get_vocab()/vocab_size, not .vocab
+    vocab_size = len(tokenizer.get_vocab()) if hasattr(tokenizer, "get_vocab") else getattr(tokenizer, "vocab_size", -1)
+    logger.info(
+        "DEBUG: Tokenizer: %s, dict size = %d, mask token = %s,  cls token = %s, pad token = %s",
+        tokenizer.__class__.__name__,
+        vocab_size,
+        tokenizer.mask_token,
+        tokenizer.cls_token,
+        tokenizer.pad_token,
+    )
 
     model = ConcordForCls.from_pretrained(
         model_args.model_name_or_path,
