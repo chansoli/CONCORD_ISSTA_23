@@ -93,21 +93,21 @@ CODEBERT_MARKER="${CODEBERT_DIR}/config.json"
 if [ -f "${CODEBERT_MARKER}" ]; then
   echo "CodeBERT already present at ${CODEBERT_DIR}; skipping download."
 else
-  CODEBERT_DIR="${CODEBERT_DIR}" conda run "${CONDA_TARGET[@]}" python - <<PY
-import os
+  DOWNLOAD_SCRIPT="
 from pathlib import Path
 from huggingface_hub import snapshot_download
 
-target = Path(os.environ["CODEBERT_DIR"]).resolve()
+target = Path('${CODEBERT_DIR}').resolve()
 target.mkdir(parents=True, exist_ok=True)
 snapshot_download(
-    repo_id="microsoft/codebert-base",
+    repo_id='microsoft/codebert-base',
     local_dir=target,
     local_dir_use_symlinks=False,
     resume_download=True,
 )
-print(f"CodeBERT downloaded to {target}")
-PY
+print(f'CodeBERT downloaded to {target}')
+"
+  conda run "${CONDA_TARGET[@]}" python -c "$DOWNLOAD_SCRIPT"
 fi
 
 echo "Setup complete. Activate the environment with: conda activate ${ENV_NAME}"
