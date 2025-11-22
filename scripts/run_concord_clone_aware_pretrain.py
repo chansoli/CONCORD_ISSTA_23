@@ -1,6 +1,8 @@
+import json
 import logging
 import math
 import os
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, Union
 import sys
@@ -28,6 +30,41 @@ require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/lang
 logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
+
+
+def merge_with_concord_defaults(base_config, concord_cfg_path=None):
+    """
+    Merge CodeBERT (or other base) config with Concord-specific defaults.
+
+    Base config values win on key collisions; Concord-only keys (tree_vocab_size, etc.)
+    are injected so the Concord model can initialize without hand-editing the base config.
+    """
+    project_root = Path(__file__).resolve().parents[1]
+    cfg_path = Path(concord_cfg_path) if concord_cfg_path is not None else project_root / "config" / "concord_pretrain_config.json"
+    if not cfg_path.exists():
+        logger.warning("Concord config not found at %s; using base config only.", cfg_path)
+        return base_config
+
+    try:
+        with cfg_path.open() as f:
+            concord_cfg = json.load(f)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to read Concord config %s: %s", cfg_path, exc)
+        return base_config
+
+    base_dict = base_config.to_dict()
+    added = []
+    for key, value in concord_cfg.items():
+        if key in base_dict:
+            continue  # keep base model's value
+        setattr(base_config, key, value)
+        added.append(key)
+
+    if added:
+        logger.info("Merged %d Concord-specific config fields into base config: %s", len(added), ", ".join(sorted(added)))
+    else:
+        logger.info("No additional Concord config fields merged; base config already contains all keys.")
+    return base_config
 
 
 @dataclass
@@ -62,7 +99,11 @@ class ModelArguments:
         },
     )
     config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Path to Concord-specific config fragment (merged into the base model config). "
+                    "If omitted, uses config/concord_pretrain_config.json."
+        },
     )
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
@@ -232,13 +273,21 @@ def main():
         datasets = load_dataset(extension, data_files=data_files, cache_dir=model_args.cache_dir)
 
 
-    if model_args.config_name:
-        config = AutoConfig.from_pretrained(model_args.config_name, cache_dir=model_args.cache_dir)
-    elif model_args.model_name_or_path:
+    concord_cfg_path = None
+    if model_args.model_name_or_path:
+        # Use the base model's config as the starting point; merge Concord fields later.
         config = AutoConfig.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
+        # If the user supplied --config_name, treat it as the Concord fragment to merge.
+        concord_cfg_path = model_args.config_name
+    elif model_args.config_name:
+        # No base model given; fall back to whatever config was passed.
+        config = AutoConfig.from_pretrained(model_args.config_name, cache_dir=model_args.cache_dir)
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
         logger.warning("You are instantiating a new config instance from scratch.")
+
+    # Merge base model config with Concord defaults; base values take precedence.
+    config = merge_with_concord_defaults(config, concord_cfg_path)
     logger.info("DEBUG: config class name %s", config.__class__.__name__)
 
     tokenizer_kwargs = {
