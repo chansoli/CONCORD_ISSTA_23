@@ -1,0 +1,4 @@
+{"index": 0, "code": "int add(int x, int y) { return x + y; }", "label": "0"}
+{"index": 1, "code": "int add_variant(int a, int b) { return a + b; }", "label": "0"}
+{"index": 2, "code": "int mul(int x, int y) { return x * y; }", "label": "1"}
+{"index": 3, "code": "int mul_variant(int a, int b) { int t = a * b; return t; }", "label": "1"}
