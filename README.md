@@ -69,3 +69,100 @@ python process_code.py \
 
 Note that `process_code.py` script is just to illustrate the basic data processing steps using CodeXGLUE raw data; you may need to customize the script for your specific goal.
 
+## Full rehersal
+### Run setup
+It will create conda env, install things, build tree-sitter/apex, download fine_tune data provided by CONCORD work, codebert-base
+
+call `setup.sh`
+
+activate into concord env
+```
+conda activate concord
+```
+
+Then follow one by one for env check.
+
+```bash
+python data_processing/convert_to_concord_triplets.py \
+  --input data_processing/clone_sample_raw.jsonl \
+  --output data_processing/clone_triplets.json \
+  --tokenizer vocab/multilingual_5k_repo_50k_vocab.model \
+  --max-length 512 \
+  --negatives-per-sample 1
+```
+
+Reduce num_hidden_layers to make it use less memory for train
+```json:downloads/huggingface/codebert-base/config.json
+    "num_hidden_layers": 6,
+```
+
+```bash
+python scripts/run_concord_clone_aware_pretrain.py \
+  --model_name_or_path downloads/huggingface/codebert-base \
+  --config_name config/concord_pretrain_config.json \
+  --train_file data_processing/clone_triplets.json \
+  --validation_file data_processing/clone_triplets.json \
+  --output_dir outputs/test_clone_pretrain \
+  --do_train True \
+  --do_eval True \
+  --num_train_epochs 1 \
+  --per_device_train_batch_size 1 \
+  --overwrite_output_dir True \
+  --remove_unused_columns False \
+  --max_seq_length 16
+```
+
+```bash
+python data_processing/make_poj104_cc_small.py
+```
+
+```bash
+python scripts/run_concord_finetune_cc_cxg.py \
+  --task poj104 \
+  --model_name_or_path outputs/test_clone_pretrain \
+  --config_name outputs/test_clone_pretrain/config.json \
+  --tokenizer_name downloads/huggingface/codebert-base \
+  --train_data_file data_processing/finetune_data/poj104_cc_small/train.jsonl \
+  --eval_data_file data_processing/finetune_data/poj104_cc_small/valid.jsonl \
+  --test_data_file data_processing/finetune_data/poj104_cc_small/test.jsonl \
+  --output_dir outputs/poj104_finetune \
+  --block_size 128 \
+  --train_batch_size 6 \
+  --eval_batch_size 6 \
+  --gradient_accumulation_steps 2 \
+  --learning_rate 5e-5 \
+  --num_train_epochs 1 \
+  --warmup_ratio 0.1 \
+  --logging_steps 50 \
+  --save_steps 5 \
+  --overwrite_output_dir \
+  --do_train --do_eval --do_test
+```
+
+```bash
+python data_processing/make_cxg_vd_small.py
+```
+
+```bash
+python scripts/run_concord_finetune_vd.py \
+    --task_name cxg_vd \
+    --train_file data_processing/finetune_data/cxg_vd_small/train_func.csv \
+    --validation_file data_processing/finetune_data/cxg_vd_small/valid_func.csv \
+    --test_file data_processing/finetune_data/cxg_vd_small/test_func.csv \
+    --model_name_or_path outputs/test_clone_pretrain \
+    --config_name outputs/test_clone_pretrain/config.json \
+    --tokenizer_name downloads/huggingface/codebert-base \
+    --output_dir outputs/cxg_vd_small_finetune \
+    --max_seq_length 256 \
+    --per_device_train_batch_size 8 \
+    --per_device_eval_batch_size 8 \
+    --num_train_epochs 1 \
+    --learning_rate 5e-5 \
+    --warmup_ratio 0.1 \
+    --evaluation_strategy steps \
+    --eval_steps 500 \
+    --logging_steps 100 \
+    --save_steps 500 \
+    --overwrite_output_dir \
+    --do_train --do_eval --do_predict
+```
