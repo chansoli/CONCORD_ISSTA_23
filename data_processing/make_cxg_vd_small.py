@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Create a smaller, label-balanced subset of the CXG variant-detection dataset.
 
-By default, reads from data_processing/finetune_data/cxg_vd and writes to
+By default, reads the preprocessed data from the finetune_data.zip payload
+downloaded by setup.sh (under downloads/zenodo_8393793 by default, respecting
+CONCORD_DOWNLOAD_DIR). If that download is missing, it falls back to
+data_processing/finetune_data/cxg_vd. Writes to
 data_processing/finetune_data/cxg_vd_small with up to 200 rows per split and at
 least a minimum number of examples per label to keep both classes represented.
 """
@@ -9,6 +12,7 @@ least a minimum number of examples per label to keep both classes represented.
 import argparse
 import csv
 import math
+import os
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -80,12 +84,23 @@ def sample_split(split: str, input_dir: Path, output_dir: Path, limit: int, min_
 
 def parse_args():
     base_dir = Path(__file__).resolve().parent
+    project_root = base_dir.parent
+    download_root = Path(os.environ.get("CONCORD_DOWNLOAD_DIR", project_root / "downloads" / "zenodo_8393793"))
+    # setup.sh unzips finetune_data.zip into <download_root>/finetune_data/data/cxg_vd
+    downloaded_input_dir = download_root / "finetune_data" / "data" / "cxg_vd"
+    repo_input_dir = base_dir / "finetune_data" / "cxg_vd"
+    default_input_dir = downloaded_input_dir if downloaded_input_dir.exists() else repo_input_dir
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=base_dir / "finetune_data" / "cxg_vd",
-        help="Directory containing *_func.csv splits (default: data_processing/finetune_data/cxg_vd)",
+        default=default_input_dir,
+        help=(
+            "Directory containing *_func.csv splits "
+            "(default: <CONCORD_DOWNLOAD_DIR>/finetune_data/data/cxg_vd from setup.sh; "
+            "falls back to data_processing/finetune_data/cxg_vd)"
+        ),
     )
     parser.add_argument(
         "--output-dir",
