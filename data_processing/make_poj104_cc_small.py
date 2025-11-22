@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Create a smaller, label-balanced subset of the POJ-104 CC dataset.
 
-By default, this script reads the full dataset from
-data_processing/finetune_data/poj104_cc and writes a reduced sample to
+By default, this script reads the full dataset from the finetune_data.zip
+payload downloaded by setup.sh (under downloads/zenodo_8393793 by default,
+respecting CONCORD_DOWNLOAD_DIR). If that download is missing, it falls back to
+data_processing/finetune_data/poj104_cc. The reduced sample is written to
 data_processing/finetune_data/poj104_cc_small with up to 100 lines per split
 and at least two examples per label so the negative-sampling dataloader can
 operate without errors.
@@ -11,6 +13,7 @@ operate without errors.
 import argparse
 import json
 import math
+import os
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -77,12 +80,23 @@ def sample_split(split: str, input_dir: Path, output_dir: Path, limit: int, min_
 
 def parse_args():
     base_dir = Path(__file__).resolve().parent
+    project_root = base_dir.parent
+    download_root = Path(os.environ.get("CONCORD_DOWNLOAD_DIR", project_root / "downloads" / "zenodo_8393793"))
+    # setup.sh unzips finetune_data.zip into <download_root>/finetune_data/data/poj104_cc
+    downloaded_input_dir = download_root / "finetune_data" / "data" / "poj104_cc"
+    repo_input_dir = base_dir / "finetune_data" / "poj104_cc"
+    default_input_dir = downloaded_input_dir if downloaded_input_dir.exists() else repo_input_dir
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=base_dir / "finetune_data" / "poj104_cc",
-        help="Directory containing train/valid/test.jsonl (default: data_processing/finetune_data/poj104_cc)",
+        default=default_input_dir,
+        help=(
+            "Directory containing train/valid/test.jsonl "
+            "(default: <CONCORD_DOWNLOAD_DIR>/finetune_data/poj104_cc from setup.sh; "
+            "falls back to data_processing/finetune_data/poj104_cc)"
+        ),
     )
     parser.add_argument(
         "--output-dir",
