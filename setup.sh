@@ -41,11 +41,12 @@ else
   conda create -y "${CONDA_TARGET[@]}" "python=${PYTHON_VERSION}"
 fi
 echo "[2a/7] Setting LD_PRELOAD for '${ENV_NAME}'..."
-conda env config vars set "${CONDA_TARGET[@]}" "LD_PRELOAD=${ENV_PREFIX}/lib/libstdc++.so.6"
+conda env config vars set "${CONDA_TARGET[@]}" "LD_PRELOAD=${ENV_PREFIX}/lib/libittnotify.so ${ENV_PREFIX}/lib/libstdc++.so.6"
 conda env config vars set "${CONDA_TARGET[@]}" "PYTHONPATH=${PROJECT_ROOT}"
 
 echo "[3/7] Installing Python dependencies..."
 conda install -y "${CONDA_TARGET[@]}" pytorch==1.10.1 torchvision==0.11.2 torchaudio==0.10.1 cudatoolkit=11.3 -c pytorch -c conda-forge
+conda install -y "${CONDA_TARGET[@]}" ittapi intel-openmp -c conda-forge
 conda install -y "${CONDA_TARGET[@]}" numpy=1.22.4 scipy scikit-learn -c conda-forge
 
 if [ ! -d "${PROJECT_ROOT}/apex" ]; then
