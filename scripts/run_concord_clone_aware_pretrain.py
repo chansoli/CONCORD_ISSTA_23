@@ -203,10 +203,10 @@ class DataTrainingArguments:
         else:
             if self.train_file is not None:
                 extension = self.train_file.split(".")[-1]
-                assert extension in ["csv", "json", "txt"], "`train_file` should be a csv, a json or a txt file."
+                assert extension in ["csv", "jsonl", "txt"], "`train_file` should be a csv, a jsonl or a txt file."
             if self.validation_file is not None:
                 extension = self.validation_file.split(".")[-1]
-                assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, a json or a txt file."
+                assert extension in ["csv", "jsonl", "txt"], "`validation_file` should be a csv, a jsonl or a txt file."
 
 
 
@@ -267,6 +267,8 @@ def main():
 
     if extension == "txt":
         extension = "text"
+    if extension == "jsonl":
+        extension = "json"
     if extension == "csv":
         datasets = load_dataset(extension, data_files=data_files, cache_dir=model_args.cache_dir, delimiter="\t")
     else:
