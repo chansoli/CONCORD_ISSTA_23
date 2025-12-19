@@ -17,6 +17,14 @@ CODEBERT_DIR="${CONCORD_CODEBERT_DIR:-${PROJECT_ROOT}/downloads/huggingface/code
 APEX_REPO_URL="https://github.com/NVIDIA/apex.git"
 APEX_COMMIT="feae3851a5449e092202a1c692d01e0124f977e4"
 export CONDA_OVERRIDE_CUDA=""
+export CONDA_PKGS_DIRS="${PROJECT_ROOT}/.conda/pkgs"
+mkdir -p "${CONDA_PKGS_DIRS}"
+
+echo "Checking for unzip..."
+if ! command -v unzip >/dev/null 2>&1; then
+  echo "unzip not found on PATH. Please install unzip and re-run." >&2
+  exit 1
+fi
 
 echo "[1/7] Checking for conda..."
 if ! command -v conda >/dev/null 2>&1; then
@@ -27,7 +35,27 @@ fi
 CONDA_BASE="$(conda info --base)"
 DEFAULT_ENV_PREFIX="${CONDA_BASE}/envs/${ENV_NAME}"
 ENV_PREFIX="${CONCORD_ENV_PREFIX:-${DEFAULT_ENV_PREFIX}}"
-if ! mkdir -p "$(dirname "${ENV_PREFIX}")" 2>/dev/null; then
+
+ensure_writable_prefix() {
+  local prefix="$1"
+  local parent
+  local probe
+  parent="$(dirname "${prefix}")"
+  if ! mkdir -p "${parent}" 2>/dev/null; then
+    return 1
+  fi
+  if [ -d "${prefix}" ]; then
+    probe="${prefix}/.concord_write_test"
+  else
+    probe="${parent}/.concord_write_test"
+  fi
+  if ! ( : > "${probe}" ) 2>/dev/null; then
+    return 1
+  fi
+  rm -f "${probe}"
+}
+
+if ! ensure_writable_prefix "${ENV_PREFIX}"; then
   ENV_PREFIX="${PROJECT_ROOT}/.conda/envs/${ENV_NAME}"
   mkdir -p "$(dirname "${ENV_PREFIX}")"
 fi
@@ -45,9 +73,33 @@ conda env config vars set "${CONDA_TARGET[@]}" "LD_PRELOAD=${ENV_PREFIX}/lib/lib
 conda env config vars set "${CONDA_TARGET[@]}" "PYTHONPATH=${PROJECT_ROOT}"
 
 echo "[3/7] Installing Python dependencies..."
+if conda tos --help >/dev/null 2>&1; then
+  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+fi
 conda install -y "${CONDA_TARGET[@]}" pytorch==1.10.1 torchvision==0.11.2 torchaudio==0.10.1 cudatoolkit=11.3 -c pytorch -c conda-forge
-conda install -y "${CONDA_TARGET[@]}" ittapi intel-openmp -c conda-forge
+conda install -y "${CONDA_TARGET[@]}" ittapi intel-openmp -c conda-forge -c defaults
 conda install -y "${CONDA_TARGET[@]}" numpy=1.22.4 scipy scikit-learn -c conda-forge
+
+LIBITT="${ENV_PREFIX}/lib/libittnotify.so"
+if [ ! -f "${LIBITT}" ]; then
+  echo "[3a/7] Creating stub libittnotify.so for torch runtime..."
+  STUB_SRC="${PROJECT_ROOT}/.conda/libittnotify_stub.c"
+  cat > "${STUB_SRC}" <<'EOF'
+#include <stdint.h>
+
+int iJIT_NotifyEvent(int event_type, void *event_data) {
+  (void)event_type;
+  (void)event_data;
+  return 0;
+}
+
+int iJIT_IsProfilingActive(void) { return 0; }
+
+void *iJIT_GetNewMethodID(void) { return (void *)0; }
+EOF
+  gcc -shared -fPIC -o "${LIBITT}" "${STUB_SRC}"
+fi
 
 if [ ! -d "${PROJECT_ROOT}/apex" ]; then
   echo "[3a/7] Cloning NVIDIA Apex..."
