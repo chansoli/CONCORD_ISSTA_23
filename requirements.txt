@@ -92,3 +92,4 @@ xxhash==2.0.2
 yarg==0.1.9
 yarl==1.7.2
 zipp==3.8.1
+setuptools==59.5.0
