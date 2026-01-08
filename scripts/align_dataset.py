@@ -1,64 +1,94 @@
 import argparse
 import json
-import os
-from transformers import RobertaTokenizer
 from tqdm import tqdm
+from transformers import BertTokenizer, RobertaTokenizer
+
+def load_tokenizer(tokenizer_type, model_name_or_path=None, vocab_file=None):
+    t = tokenizer_type.lower()
+    if t == "bert":
+        if not vocab_file:
+            raise ValueError("--tokenizer_type bert requires --vocab_file")
+        return BertTokenizer.from_pretrained(vocab_file)
+    elif t == "roberta":
+        if not model_name_or_path:
+            raise ValueError("--tokenizer_type roberta requires --model_name_or_path")
+        return RobertaTokenizer.from_pretrained(model_name_or_path)
+    else:
+        raise ValueError(f"Unknown tokenizer_type: {tokenizer_type}")
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input_file", type=str, required=True)
-    parser.add_argument("--output_file", type=str, required=True)
-    parser.add_argument("--model_name_or_path", type=str, default="downloads/huggingface/codebert-base")
-    parser.add_argument("--max_seq_length", type=int, default=128)
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input_file", required=True)
+    ap.add_argument("--output_file", required=True)
+    ap.add_argument("--tokenizer_type", required=True, choices=["bert", "roberta"])
+    ap.add_argument("--model_name_or_path", default=None)
+    ap.add_argument("--vocab_file", default=None)
+    ap.add_argument("--max_seq_length", type=int, default=128)
+    args = ap.parse_args()
 
-    print(f"Loading tokenizer from {args.model_name_or_path}")
-    try:
-        tokenizer = RobertaTokenizer.from_pretrained(args.model_name_or_path)
-    except Exception as e:
-        print(f"Failed to load from {args.model_name_or_path}: {e}")
-        print("Falling back to microsoft/codebert-base")
-        tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
+    tok = load_tokenizer(args.tokenizer_type, args.model_name_or_path, args.vocab_file)
 
-    print(f"Processing {args.input_file} -> {args.output_file}")
-    
-    with open(args.input_file, 'r') as f_in, open(args.output_file, 'w') as f_out:
-        lines = f_in.readlines()
-        for line in tqdm(lines):
+    # How many special tokens the tokenizer adds for a single sequence
+    n_special = tok.num_special_tokens_to_add(pair=False)
+    if n_special < 2:
+        # practically should be 2 for BERT/RoBERTa single sequences
+        n_special = 2
+
+    with open(args.input_file, "r") as f_in, open(args.output_file, "w") as f_out:
+        for idx, line in enumerate(tqdm(f_in)):
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
                 continue
-                
-            orig_code = data.get("orig_code", "")
-            if orig_code is None: orig_code = " "
-            
-            # Tokenize same way as training script
-            tokens = tokenizer(
-                orig_code,
+
+            orig = data.get("orig_code") or " "
+            pos  = data.get("positive_code") or " "
+            neg  = data.get("negative_code") or " "
+
+            # IMPORTANT: pad to max_length to match pretrain
+            enc = tok(
+                orig,
                 max_length=args.max_seq_length,
                 truncation=True,
-                padding=False, # Script uses False unless pad_to_max_length is set (defaults False)
-                return_special_tokens_mask=True
+                padding="max_length",
+                return_attention_mask=True,
             )
-            input_ids = tokens['input_ids']
-            
-            # Calculate needed tree tokens (remove cls and sep)
-            # The training script does:
-            # tl = [CLS] + tree_tokens[:max-2] + [SEP]
-            # assert len(tl) == len(input_ids)
-            # So len(tree_tokens_used) must be len(input_ids) - 2
-            
-            num_tree_tokens = max(0, len(input_ids) - 2)
-            
-            # Construct tree_token_ids string
-            # Assuming 0 is the default/dummy value required
-            tree_ids = ["0"] * num_tree_tokens
-            data["tree_token_ids"] = " ".join(tree_ids)
-            
-            f_out.write(json.dumps(data) + "\n")
-    
-    print("Done.")
+            input_ids_len = len(enc["input_ids"])
+            assert input_ids_len == args.max_seq_length
+
+            # Real (non-pad) token count
+            real_len = int(sum(enc["attention_mask"]))  # includes specials
+
+            # Build a tree-token list that matches real_len first, then pad to max_seq_length
+            # Convention: use 0 for [CLS]/<s>, code tokens, and [SEP]</s> (since you don't have real AST ids yet)
+            tl = [0] * real_len
+
+            pad_len = args.max_seq_length - len(tl)
+            if pad_len < 0:
+                tl = tl[:args.max_seq_length]
+            else:
+                if tok.padding_side == "right":
+                    tl = tl + [0] * pad_len
+                else:
+                    tl = [0] * pad_len + tl
+
+            assert len(tl) == args.max_seq_length
+
+            if idx == 0:
+                print("padding_side =", tok.padding_side, "pad_token_id =", tok.pad_token_id)
+                print("row0: len(input_ids) =", input_ids_len, "real_len(attn) =", real_len, "len(tl) =", len(tl))
+                print("orig head:", repr(orig[:100]))
+
+            n_special = tok.num_special_tokens_to_add(pair=False)  # 2 for CodeBERT
+            content_len = args.max_seq_length - n_special          # 126 when max_seq_length=128
+
+            out = {
+                "orig_code": orig,
+                "positive_code": pos,
+                "negative_code": neg,
+                "tree_token_ids": " ".join(["0"] * content_len)
+            }
+            f_out.write(json.dumps(out) + "\n")
 
 if __name__ == "__main__":
     main()

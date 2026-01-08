@@ -35,7 +35,9 @@ class Model(torch.nn.Module):
         bs, _ = input_ids.size()
         input_ids = torch.cat((input_ids, p_input_ids, n_input_ids), 0)
 
-        outputs = self.encoder(input_ids, attention_mask=input_ids.ne(0)) # Note that the pad token id is 0 in our tokenizer
+        # HERE: to check working with CodeBert
+        # outputs = self.encoder(input_ids, attention_mask=input_ids.ne(0)) # Note that the pad token id is 0 in our tokenizer
+        outputs = self.encoder(input_ids, attention_mask=input_ids.ne(self.tokenizer.pad_token_id))
         outputs = outputs.split(bs, 0)
         prob_1 = (outputs[0] * outputs[1]).sum(-1)
         prob_2 = (outputs[0] * outputs[2]).sum(-1)
@@ -66,13 +68,24 @@ class InputFeatures(object):
 
         
 def convert_examples_to_features(js,tokenizer,args):
+    # HERE: to see if CodeBert
     #source
-    code=' '.join(js['code'].split())
-    code_tokens=code.split()[:args.block_size-2]
-    source_tokens = [tokenizer.cls_token] + code_tokens + [tokenizer.sep_token]
-    source_ids = tokenizer.convert_tokens_to_ids(source_tokens)
-    padding_length = args.block_size - len(source_ids)
-    source_ids += [tokenizer.pad_token_id] * padding_length
+    # code=' '.join(js['code'].split())
+    # code_tokens=code.split()[:args.block_size-2]
+    # source_tokens = [tokenizer.cls_token] + code_tokens + [tokenizer.sep_token]
+    # source_ids = tokenizer.convert_tokens_to_ids(source_tokens)
+    # padding_length = args.block_size - len(source_ids)
+    # source_ids += [tokenizer.pad_token_id] * padding_length
+    # return InputFeatures(source_tokens, source_ids, js['index'], int(js['label']))
+    code = ' '.join(js['code'].split())
+    enc = tokenizer(
+        code,
+        max_length=args.block_size,
+        truncation=True,
+        padding="max_length",
+    )
+    source_ids = enc["input_ids"]
+    source_tokens = tokenizer.convert_ids_to_tokens(source_ids)
     return InputFeatures(source_tokens, source_ids, js['index'], int(js['label']))
 
 class TextDataset(Dataset):
@@ -452,6 +465,7 @@ def test(args, model, tokenizer):
             js['index']=index
             js['answers']=[]
             for idx in sort_id[:499]:
+            # for idx in sort_id[:19]:
                 js['answers'].append(indexs[int(idx)])
             f.write(json.dumps(js)+'\n')
 
